@@ -2,46 +2,57 @@ import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-const ModelSpawner = ({ model, onDespawn }) => {
+// ModelSpawner spawns or despawns a model with animation. Notifies parent when centered (ready for inspect).
+// If freeze is true, model is instantly centered and does not animate.
+const ModelSpawner = ({ model, onDespawn, onCentered, freeze }) => {
   const groupRef = useRef()
   const meshRef = useRef()
 
-  const [phase, setPhase] = useState(null) // 0: kavisli dönüş, 1: despawn
+  const [phase, setPhase] = useState(null) // 0: curve out, 1: despawn
   const [t, setT] = useState(0)
+  const [centered, setCentered] = useState(false)
 
   const isSpawning = !model.remove
   const isDespawning = model.remove
 
-  // Eğri tanımı (J şekli)
+  // Curve definition (J shape)
   const curve = new THREE.CubicBezierCurve3(
-    new THREE.Vector3(0, 0.5, 0),         // Başlangıç
-    new THREE.Vector3(0, 0.5, 2),         // Z yönüne çıkış
-    new THREE.Vector3(2, 0.5, 2),         // Sağ köşe
-    new THREE.Vector3(2, 0.5, -10)        // Geri iniş
+    new THREE.Vector3(0, 0.5, 0),         // Start
+    new THREE.Vector3(0, 0.5, 2),         // Out in Z
+    new THREE.Vector3(2, 0.5, 2),         // Right corner
+    new THREE.Vector3(2, 0.5, -10)        // Back down
   )
 
-  // Başlangıç pozisyonu
+  // Initial position
   useEffect(() => {
+    setCentered(false);
+    if (freeze) {
+      // Instantly center if freeze is true
+      groupRef.current.position.set(0, 0.5, 0);
+      groupRef.current.rotation.y = 0;
+      setCentered(true);
+      if (onCentered) onCentered();
+      return;
+    }
     if (isSpawning) {
       setT(0)
       setPhase(null)
       groupRef.current.position.set(0, 0.5, -10)
       groupRef.current.rotation.y = 0
     }
-
     if (isDespawning) {
       setT(0)
       setPhase(0)
       groupRef.current.position.set(0, 0.5, 0)
       groupRef.current.rotation.y = 0
     }
-  }, [model])
+  }, [model, freeze])
 
-  // Eğri üzerinde ilerleme
+  // Animation loop
   useFrame(() => {
-    if (!groupRef.current) return
+    if (!groupRef.current || freeze) return
 
-    // === DESPAWN HAREKETİ ===
+    // === DESPAWN ANIMATION ===
     if (isDespawning && phase === 0) {
       const nextT = Math.min(t + 0.02, 1)
       setT(nextT)
@@ -60,7 +71,7 @@ const ModelSpawner = ({ model, onDespawn }) => {
       return
     }
 
-    // === DESPAWN BİTİŞ ===
+    // === DESPAWN END ===
     if (isDespawning && phase === 1) {
       onDespawn?.()
     }
@@ -68,6 +79,13 @@ const ModelSpawner = ({ model, onDespawn }) => {
     // === SPAWN ===
     if (isSpawning && groupRef.current.position.z < -0.15) {
       groupRef.current.position.z += 0.1
+      if (groupRef.current.position.z >= -0.15 && !centered) {
+        setCentered(true);
+        if (onCentered) onCentered();
+      }
+    } else if (isSpawning && groupRef.current.position.z >= -0.15 && !centered) {
+      setCentered(true);
+      if (onCentered) onCentered();
     }
   })
 
